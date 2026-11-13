@@ -34,6 +34,7 @@ import com.github.games647.fastlogin.core.storage.StoredProfile;
 import net.md_5.bungee.config.Configuration;
 
 import java.util.Optional;
+import java.util.UUID;
 
 public abstract class JoinManagement<P extends C, C, S extends LoginSource> {
 
@@ -79,23 +80,55 @@ public abstract class JoinManagement<P extends C, C, S extends LoginSource> {
 
         String ip = source.getAddress().getAddress().getHostAddress();
         profile.setLastIp(ip);
+        if (profile.isExistingPlayer() && profile.isOnlinemodePreferred()) {
+            core.getPlugin().getLog().info("Requesting premium login for registered player: {}", username);
+            requestPremiumLogin(source, profile, username, true);
+            return;
+        }
+
+        boolean failedLogin = false;
+        if (core.getConfig().get("detectPremiumByUuid", false)) {
+            // hasFailedLogin consumes the entry, so the result is passed on instead of asking twice
+            failedLogin = core.hasFailedLogin(ip, username);
+            if (!failedLogin && isClientUuidPremium(source, username)) {
+                core.getPlugin().getLog().info("Client of {} sent the UUID of its premium account", username);
+                requestPremiumLogin(source, profile, username, false);
+                return;
+            }
+        }
+
         if (profile.isExistingPlayer()) {
-            if (profile.isOnlinemodePreferred()) {
-                core.getPlugin().getLog().info("Requesting premium login for registered player: {}", username);
-                requestPremiumLogin(source, profile, username, true);
-            } else {
-                if (isValidUsername(source, profile)) {
-                    startCrackedSession(source, profile, username);
-                }
+            if (isValidUsername(source, profile)) {
+                startCrackedSession(source, profile, username);
             }
         } else {
-            performNewPlayerLogin(username, source, ip, profile);
+            performNewPlayerLogin(username, source, ip, profile, failedLogin);
         }
     }
 
-    private void performNewPlayerLogin(String username, S source, String ip, StoredProfile profile) {
+    private boolean isClientUuidPremium(S source, String username) {
+        // premium clients send the id of their account (version 4), offline clients usually a name based one (3)
+        UUID clientId = source.getClientUniqueId();
+        if (clientId == null || clientId.version() != 4) {
+            return false;
+        }
+
         try {
-            if (core.hasFailedLogin(ip, username)) {
+            Optional<Profile> premiumProfile = core.getResolver().findProfile(username);
+            return premiumProfile.isPresent() && clientId.equals(premiumProfile.get().getId());
+        } catch (RateLimitException rateLimitEx) {
+            core.getPlugin().getLog().warn("Mojang's rate limit reached, cannot check the client UUID of {}", username);
+        } catch (Exception ex) {
+            core.getPlugin().getLog().warn("Failed to check the client UUID of {}: {}", username, ex.toString());
+        }
+
+        return false;
+    }
+
+    private void performNewPlayerLogin(String username, S source, String ip, StoredProfile profile,
+                                       boolean failedLogin) {
+        try {
+            if (failedLogin || core.hasFailedLogin(ip, username)) {
                 core.getPlugin().getLog().info("Second attempt login -> cracked {}", username);
 
                 //first login request failed so make a cracked session

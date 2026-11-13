@@ -26,6 +26,7 @@
 package com.github.games647.fastlogin.core.shared;
 
 import java.net.InetSocketAddress;
+import java.util.UUID;
 
 public interface LoginSource {
 
@@ -34,4 +35,13 @@ public interface LoginSource {
     void kick(String message);
 
     InetSocketAddress getAddress();
+
+    /**
+     * UUID sent by the client in its login start packet (1.19.1+), or null if the platform doesn't expose it.
+     *
+     * @return the UUID announced by the client or null if unknown
+     */
+    default UUID getClientUniqueId() {
+        return null;
+    }
 }

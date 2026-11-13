@@ -57,6 +57,22 @@ respectIpLimit: false
 # tries to join again, so the player could join as cracked player.
 secondAttemptCracked: false
 
+# Detect premium players by the UUID their client sends on login (Minecraft 1.19.1+). Only used on Velocity, other
+# platforms don't expose this UUID.
+#
+# A paid client sends the UUID of its account, while cracked launchers usually send an offline UUID. If the player
+# name isn't a registered premium player yet and the client sent exactly the UUID that Mojang returns for this name,
+# we request a premium authentication. Otherwise the player joins as cracked, without being asked anything, so cracked
+# players with a premium name are not kicked. The proof is still the Mojang authentication itself.
+#
+# Only clients sending a Mojang style UUID (version 4) cause a request to the Mojang API. If the API fails or the rate
+# limit is reached, the player joins as cracked.
+#
+# A client that sends the UUID of the account without owning it (modified launcher) fails the authentication and is
+# kicked once. The next attempt within 5 minutes is cracked only if secondAttemptCracked is enabled, otherwise such a
+# client gets the premium request again on every attempt.
+detectPremiumByUuid: false
+
 # New cracked players will be kicked from server. Good if you want switch from offline-mode to online-mode without
 # losing players!
 #

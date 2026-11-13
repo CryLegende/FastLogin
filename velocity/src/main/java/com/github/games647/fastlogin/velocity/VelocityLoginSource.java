@@ -33,6 +33,7 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 
 import java.net.InetSocketAddress;
+import java.util.UUID;
 
 public class VelocityLoginSource implements LoginSource {
 
@@ -65,6 +66,11 @@ public class VelocityLoginSource implements LoginSource {
     @Override
     public InetSocketAddress getAddress() {
         return connection.getRemoteAddress();
+    }
+
+    @Override
+    public UUID getClientUniqueId() {
+        return preLoginEvent.getUniqueId();
     }
 
     public InboundConnection getConnection() {

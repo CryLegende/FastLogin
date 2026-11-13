@@ -125,6 +125,10 @@ public class ConnectListener {
                 return;
             }
 
+            // Mojang verified this login, so it must not count as a failed attempt if the player reconnects soon
+            String ip = event.getConnection().getRemoteAddress().getAddress().getHostAddress();
+            plugin.getCore().removeLoginAttempt(ip, session.getRequestUsername());
+
             UUID verifiedUUID = event.getGameProfile().getId();
             String verifiedUsername = event.getUsername();
             session.setUuid(verifiedUUID);
