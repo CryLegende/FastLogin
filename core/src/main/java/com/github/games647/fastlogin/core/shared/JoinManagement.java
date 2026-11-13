@@ -145,7 +145,7 @@ public abstract class JoinManagement<P extends C, C, S extends LoginSource> {
             return false;
         }
 
-        core.getPlugin().getLog().info("Client of {} sent the UUID of its premium account", username);
+        core.getPlugin().getLog().info("Premium check requested for {} (client sent its account UUID)", username);
         requestPremiumLogin(source, profile, username, false);
         return true;
     }

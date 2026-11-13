@@ -164,7 +164,10 @@ public class ConnectListener {
 
     private void deletePremiumCheck(String username) {
         try {
-            plugin.getCore().getStorage().deletePremiumCheck(username);
+            // a check is pending only if it was requested because of the client UUID
+            if (plugin.getCore().getStorage().deletePremiumCheck(username)) {
+                plugin.getLog().info("Premium check passed for {}", username);
+            }
         } catch (SQLException sqlEx) {
             plugin.getLog().warn("Failed to delete the premium check of {}: {}", username, sqlEx.toString());
         }
