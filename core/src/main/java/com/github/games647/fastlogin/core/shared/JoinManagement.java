@@ -30,13 +30,20 @@ import com.github.games647.craftapi.resolver.RateLimitException;
 import com.github.games647.fastlogin.core.hooks.AuthPlugin;
 import com.github.games647.fastlogin.core.hooks.bedrock.BedrockService;
 import com.github.games647.fastlogin.core.shared.event.FastLoginPreLoginEvent;
+import com.github.games647.fastlogin.core.storage.PremiumCheck;
 import com.github.games647.fastlogin.core.storage.StoredProfile;
 import net.md_5.bungee.config.Configuration;
 
+import java.sql.SQLException;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 public abstract class JoinManagement<P extends C, C, S extends LoginSource> {
+
+    private static final List<Integer> DEFAULT_RETRY_DAYS = Arrays.asList(1, 7, 30);
 
     protected final FastLoginCore<P, C, ?> core;
     protected final AuthPlugin<P> authHook;
@@ -86,15 +93,8 @@ public abstract class JoinManagement<P extends C, C, S extends LoginSource> {
             return;
         }
 
-        boolean failedLogin = false;
-        if (core.getConfig().get("detectPremiumByUuid", false)) {
-            // hasFailedLogin consumes the entry, so the result is passed on instead of asking twice
-            failedLogin = core.hasFailedLogin(ip, username);
-            if (!failedLogin && isClientUuidPremium(source, username)) {
-                core.getPlugin().getLog().info("Client of {} sent the UUID of its premium account", username);
-                requestPremiumLogin(source, profile, username, false);
-                return;
-            }
+        if (core.getConfig().get("detectPremiumByUuid", false) && requestPremiumCheck(source, profile, username)) {
+            return;
         }
 
         if (profile.isExistingPlayer()) {
@@ -102,17 +102,55 @@ public abstract class JoinManagement<P extends C, C, S extends LoginSource> {
                 startCrackedSession(source, profile, username);
             }
         } else {
-            performNewPlayerLogin(username, source, ip, profile, failedLogin);
+            performNewPlayerLogin(username, source, ip, profile);
         }
     }
 
-    private boolean isClientUuidPremium(S source, String username) {
+    /**
+     * Requests a premium login if the client sent the UUID of the premium account of this name. The check is saved as
+     * failed before, and only deleted once Mojang verified the login. While a failed check is suspended, the name joins
+     * as cracked without being asked again, so a failure is seen once and not on every join.
+     *
+     * @param source connection of the player
+     * @param profile stored profile of this name
+     * @param username name sent by the client
+     * @return true if a premium login was requested
+     */
+    private boolean requestPremiumCheck(S source, StoredProfile profile, String username) {
         // premium clients send the id of their account (version 4), offline clients usually a name based one (3)
         UUID clientId = source.getClientUniqueId();
         if (clientId == null || clientId.version() != 4) {
             return false;
         }
 
+        long now = System.currentTimeMillis();
+        PremiumCheck lastCheck;
+        try {
+            lastCheck = core.getStorage().loadPremiumCheck(username);
+        } catch (SQLException sqlEx) {
+            core.getPlugin().getLog().warn("Failed to load the premium check of {}: {}", username, sqlEx.toString());
+            return false;
+        }
+
+        if ((lastCheck != null && lastCheck.getSuspendedUntil() > now) || !isPremiumUuid(clientId, username)) {
+            return false;
+        }
+
+        int failures = lastCheck == null ? 1 : lastCheck.getFailures() + 1;
+        try {
+            core.getStorage().savePremiumCheck(username, failures, now + getRetryDelay(failures));
+        } catch (SQLException sqlEx) {
+            // without a saved check, a failure would be asked again on every join
+            core.getPlugin().getLog().warn("Failed to save the premium check of {}: {}", username, sqlEx.toString());
+            return false;
+        }
+
+        core.getPlugin().getLog().info("Client of {} sent the UUID of its premium account", username);
+        requestPremiumLogin(source, profile, username, false);
+        return true;
+    }
+
+    private boolean isPremiumUuid(UUID clientId, String username) {
         try {
             Optional<Profile> premiumProfile = core.getResolver().findProfile(username);
             return premiumProfile.isPresent() && clientId.equals(premiumProfile.get().getId());
@@ -125,10 +163,20 @@ public abstract class JoinManagement<P extends C, C, S extends LoginSource> {
         return false;
     }
 
-    private void performNewPlayerLogin(String username, S source, String ip, StoredProfile profile,
-                                       boolean failedLogin) {
+    private long getRetryDelay(int failures) {
+        List<Integer> retryDays = core.getConfig().getIntList("detectPremiumRetryDays");
+        if (retryDays.isEmpty()) {
+            retryDays = DEFAULT_RETRY_DAYS;
+        }
+
+        // the last delay applies to every further failure
+        int days = retryDays.get(Math.min(failures, retryDays.size()) - 1);
+        return TimeUnit.DAYS.toMillis(Math.max(days, 0));
+    }
+
+    private void performNewPlayerLogin(String username, S source, String ip, StoredProfile profile) {
         try {
-            if (failedLogin || core.hasFailedLogin(ip, username)) {
+            if (core.hasFailedLogin(ip, username)) {
                 core.getPlugin().getLog().info("Second attempt login -> cracked {}", username);
 
                 //first login request failed so make a cracked session

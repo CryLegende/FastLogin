@@ -65,13 +65,23 @@ secondAttemptCracked: false
 # we request a premium authentication. Otherwise the player joins as cracked, without being asked anything, so cracked
 # players with a premium name are not kicked. The proof is still the Mojang authentication itself.
 #
-# Only clients sending a Mojang style UUID (version 4) cause a request to the Mojang API. If the API fails or the rate
-# limit is reached, the player joins as cracked.
+# Only clients sending a Mojang style UUID (version 4) cause a request to the Mojang API. If the API or the database
+# fails or the rate limit is reached, the player joins as cracked.
 #
-# A client that sends the UUID of the account without owning it (modified launcher) fails the authentication and is
-# kicked once. The next attempt within 5 minutes is cracked only if secondAttemptCracked is enabled, otherwise such a
-# client gets the premium request again on every attempt.
+# Each requested check is saved in the database (table premium_checks) as failed, until Mojang verified the login.
+# A check fails for example if a modified launcher sends the UUID of an account it doesn't own, or if the session of a
+# premium player expired (game open for more than a day). The player is then kicked once with 'invalid session'. While
+# the failed check is suspended (see detectPremiumRetryDays), this name joins as cracked without being asked again.
+# This doesn't depend on secondAttemptCracked. Registered premium players are not affected: they are always checked.
 detectPremiumByUuid: false
+
+# Days a failed premium check by UUID stays suspended before a new check is requested for the same name: the first
+# value after the first failure, the second after the second one, and the last value for every further failure.
+# A check that passes resets the count.
+detectPremiumRetryDays:
+  - 1
+  - 7
+  - 30
 
 # New cracked players will be kicked from server. Good if you want switch from offline-mode to online-mode without
 # losing players!

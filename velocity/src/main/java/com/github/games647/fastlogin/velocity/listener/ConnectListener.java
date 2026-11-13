@@ -58,6 +58,7 @@ import org.geysermc.floodgate.api.player.FloodgatePlayer;
 
 import java.lang.reflect.Field;
 import java.net.InetSocketAddress;
+import java.sql.SQLException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -135,6 +136,10 @@ public class ConnectListener {
             // Mojang verified this login, so it must not count as a failed attempt if the player reconnects soon
             String ip = event.getConnection().getRemoteAddress().getAddress().getHostAddress();
             plugin.getCore().removeLoginAttempt(ip, session.getRequestUsername());
+            if (plugin.getCore().getConfig().get("detectPremiumByUuid", false)) {
+                String requestUsername = session.getRequestUsername();
+                plugin.getScheduler().runAsync(() -> deletePremiumCheck(requestUsername));
+            }
 
             UUID verifiedUUID = event.getGameProfile().getId();
             String verifiedUsername = event.getUsername();
@@ -154,6 +159,14 @@ public class ConnectListener {
                 List<Property> newProp = removeSkin(event.getGameProfile().getProperties());
                 event.setGameProfile(event.getGameProfile().withProperties(newProp));
             }
+        }
+    }
+
+    private void deletePremiumCheck(String username) {
+        try {
+            plugin.getCore().getStorage().deletePremiumCheck(username);
+        } catch (SQLException sqlEx) {
+            plugin.getLog().warn("Failed to delete the premium check of {}: {}", username, sqlEx.toString());
         }
     }
 

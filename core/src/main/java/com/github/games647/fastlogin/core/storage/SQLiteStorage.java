@@ -31,6 +31,7 @@ import org.sqlite.JDBC;
 import org.sqlite.SQLiteConfig;
 
 import java.nio.file.Path;
+import java.sql.SQLException;
 import java.util.UUID;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -105,6 +106,36 @@ public class SQLiteStorage extends SQLStorage {
         lock.lock();
         try {
             super.save(playerProfile);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    @Override
+    public PremiumCheck loadPremiumCheck(String name) throws SQLException {
+        lock.lock();
+        try {
+            return super.loadPremiumCheck(name);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    @Override
+    public void savePremiumCheck(String name, int failures, long suspendedUntil) throws SQLException {
+        lock.lock();
+        try {
+            super.savePremiumCheck(name, failures, suspendedUntil);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    @Override
+    public boolean deletePremiumCheck(String name) throws SQLException {
+        lock.lock();
+        try {
+            return super.deletePremiumCheck(name);
         } finally {
             lock.unlock();
         }

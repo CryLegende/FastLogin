@@ -74,6 +74,21 @@ public abstract class SQLStorage implements AuthStorage {
             + "` SET `UUID`=?, `Name`=?, `Premium`=?, `Floodgate`=?, `LastIp`=?, "
             + "`LastLogin`=CURRENT_TIMESTAMP WHERE `UserID`=?";
 
+    protected static final String PREMIUM_CHECKS_TABLE = "premium_checks";
+    // same name column as the premium table, SuspendedUntil in epoch millis
+    protected static final String CREATE_PREMIUM_CHECKS_STMT = "CREATE TABLE IF NOT EXISTS `" + PREMIUM_CHECKS_TABLE
+            + "` (`Name` VARCHAR(16) NOT NULL PRIMARY KEY, "
+            + "`Failures` INTEGER NOT NULL, "
+            + "`SuspendedUntil` BIGINT NOT NULL)";
+    protected static final String LOAD_PREMIUM_CHECK = "SELECT `Failures`, `SuspendedUntil` FROM `"
+            + PREMIUM_CHECKS_TABLE + "` WHERE `Name`=?";
+    protected static final String UPDATE_PREMIUM_CHECK = "UPDATE `" + PREMIUM_CHECKS_TABLE
+            + "` SET `Failures`=?, `SuspendedUntil`=? WHERE `Name`=?";
+    protected static final String INSERT_PREMIUM_CHECK = "INSERT INTO `" + PREMIUM_CHECKS_TABLE
+            + "` (`Name`, `Failures`, `SuspendedUntil`) VALUES (?, ?, ?)";
+    protected static final String DELETE_PREMIUM_CHECK = "DELETE FROM `" + PREMIUM_CHECKS_TABLE
+            + "` WHERE `Name`=?";
+
     protected final Logger log;
     protected final HikariDataSource dataSource;
 
@@ -102,6 +117,12 @@ public abstract class SQLStorage implements AuthStorage {
                 stmt.executeUpdate(ADD_FLOODGATE_COLUMN_STMT);
             }
 
+            try {
+                stmt.executeUpdate(CREATE_PREMIUM_CHECKS_STMT);
+            } catch (SQLException sqlEx) {
+                // only used by detectPremiumByUuid, which then lets these players join as cracked
+                log.warn("Failed to create the {} table: {}", PREMIUM_CHECKS_TABLE, sqlEx.toString());
+            }
         }
     }
 
@@ -231,6 +252,67 @@ public abstract class SQLStorage implements AuthStorage {
             }
         } catch (SQLException ex) {
             log.error("Failed to save playerProfile {}", playerProfile, ex);
+        }
+    }
+
+    /**
+     * @param name player name, as stored in the premium table
+     * @return the premium check that wasn't passed yet for this name or null if there is none
+     * @throws SQLException if the database couldn't be read
+     */
+    public PremiumCheck loadPremiumCheck(String name) throws SQLException {
+        try (Connection con = dataSource.getConnection();
+             PreparedStatement loadStmt = con.prepareStatement(LOAD_PREMIUM_CHECK)) {
+            loadStmt.setString(1, name);
+
+            try (ResultSet resultSet = loadStmt.executeQuery()) {
+                if (resultSet.next()) {
+                    return new PremiumCheck(resultSet.getInt("Failures"), resultSet.getLong("SuspendedUntil"));
+                }
+
+                return null;
+            }
+        }
+    }
+
+    /**
+     * Updates the premium check of this name, or inserts it if there is none yet.
+     *
+     * @param name player name, as stored in the premium table
+     * @param failures number of checks requested without passing
+     * @param suspendedUntil epoch millis until no new check should be requested
+     * @throws SQLException if the database couldn't be written
+     */
+    public void savePremiumCheck(String name, int failures, long suspendedUntil) throws SQLException {
+        try (Connection con = dataSource.getConnection()) {
+            try (PreparedStatement updateStmt = con.prepareStatement(UPDATE_PREMIUM_CHECK)) {
+                updateStmt.setInt(1, failures);
+                updateStmt.setLong(2, suspendedUntil);
+                updateStmt.setString(3, name);
+                if (updateStmt.executeUpdate() > 0) {
+                    return;
+                }
+            }
+
+            try (PreparedStatement insertStmt = con.prepareStatement(INSERT_PREMIUM_CHECK)) {
+                insertStmt.setString(1, name);
+                insertStmt.setInt(2, failures);
+                insertStmt.setLong(3, suspendedUntil);
+                insertStmt.executeUpdate();
+            }
+        }
+    }
+
+    /**
+     * @param name player name, as stored in the premium table
+     * @return true if a premium check was pending for this name
+     * @throws SQLException if the database couldn't be written
+     */
+    public boolean deletePremiumCheck(String name) throws SQLException {
+        try (Connection con = dataSource.getConnection();
+             PreparedStatement deleteStmt = con.prepareStatement(DELETE_PREMIUM_CHECK)) {
+            deleteStmt.setString(1, name);
+            return deleteStmt.executeUpdate() > 0;
         }
     }
 

@@ -29,24 +29,32 @@ import com.github.games647.craftapi.model.Profile;
 import com.github.games647.craftapi.resolver.MojangResolver;
 import com.github.games647.craftapi.resolver.RateLimitException;
 import com.github.games647.fastlogin.core.shared.event.FastLoginPreLoginEvent;
+import com.github.games647.fastlogin.core.storage.PremiumCheck;
 import com.github.games647.fastlogin.core.storage.SQLStorage;
 import com.github.games647.fastlogin.core.storage.StoredProfile;
 import net.md_5.bungee.config.Configuration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.slf4j.helpers.NOPLogger;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.sql.SQLException;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -98,12 +106,76 @@ class JoinManagementTest {
     }
 
     @Test
-    void matchingPremiumUuidRequestsPremium() {
+    void firstCheckRequestsPremiumAndSavesIt() throws Exception {
         newPlayer();
+        long before = System.currentTimeMillis();
         join.onLogin(NAME, new FakeSource(PREMIUM_ID));
 
         assertEquals(Boolean.FALSE, join.premiumRequest, "premium login as unregistered player");
         assertFalse(join.cracked);
+        assertSavedCheck(1, before, TimeUnit.DAYS.toMillis(1));
+    }
+
+    @Test
+    void suspendedCheckJoinsCracked() throws Exception {
+        newPlayer();
+        long suspendedUntil = System.currentTimeMillis() + TimeUnit.HOURS.toMillis(1);
+        when(storage.loadPremiumCheck(NAME)).thenReturn(new PremiumCheck(1, suspendedUntil));
+        join.onLogin(NAME, new FakeSource(PREMIUM_ID));
+
+        assertCracked();
+        verify(resolver, never()).findProfile(anyString());
+        verify(storage, never()).savePremiumCheck(anyString(), anyInt(), anyLong());
+    }
+
+    @Test
+    void expiredCheckRetriesWithNextDelay() throws Exception {
+        newPlayer();
+        when(storage.loadPremiumCheck(NAME)).thenReturn(new PremiumCheck(1, System.currentTimeMillis() - 1));
+        long before = System.currentTimeMillis();
+        join.onLogin(NAME, new FakeSource(PREMIUM_ID));
+
+        assertEquals(Boolean.FALSE, join.premiumRequest);
+        assertSavedCheck(2, before, TimeUnit.DAYS.toMillis(7));
+    }
+
+    @Test
+    void lastDelayRepeats() throws Exception {
+        newPlayer();
+        when(storage.loadPremiumCheck(NAME)).thenReturn(new PremiumCheck(5, 0));
+        long before = System.currentTimeMillis();
+        join.onLogin(NAME, new FakeSource(PREMIUM_ID));
+
+        assertSavedCheck(6, before, TimeUnit.DAYS.toMillis(30));
+    }
+
+    @Test
+    void saveErrorJoinsCracked() throws Exception {
+        newPlayer();
+        doThrow(new SQLException("test")).when(storage).savePremiumCheck(anyString(), anyInt(), anyLong());
+        join.onLogin(NAME, new FakeSource(PREMIUM_ID));
+
+        assertCracked();
+    }
+
+    @Test
+    void loadErrorJoinsCracked() throws Exception {
+        newPlayer();
+        when(storage.loadPremiumCheck(NAME)).thenThrow(new SQLException("test"));
+        join.onLogin(NAME, new FakeSource(PREMIUM_ID));
+
+        assertCracked();
+        verify(resolver, never()).findProfile(anyString());
+    }
+
+    @Test
+    void pendingLoginAttemptDoesNotMatter() {
+        // the saved check replaces secondAttemptCracked on this path
+        newPlayer();
+        when(core.hasFailedLogin(IP, NAME)).thenReturn(true);
+        join.onLogin(NAME, new FakeSource(PREMIUM_ID));
+
+        assertEquals(Boolean.FALSE, join.premiumRequest);
     }
 
     @Test
@@ -124,24 +196,13 @@ class JoinManagementTest {
     }
 
     @Test
-    void recentFailedAttemptJoinsCracked() throws Exception {
-        newPlayer();
-        when(core.hasFailedLogin(IP, NAME)).thenReturn(true);
-        join.onLogin(NAME, new FakeSource(PREMIUM_ID));
-
-        assertCracked();
-        verify(resolver, never()).findProfile(anyString());
-        // the entry is consumed only once
-        verify(core, times(1)).hasFailedLogin(IP, NAME);
-    }
-
-    @Test
     void mojangErrorJoinsCracked() throws Exception {
         newPlayer();
         when(resolver.findProfile(NAME)).thenThrow(new RateLimitException());
         join.onLogin(NAME, new FakeSource(PREMIUM_ID));
 
         assertCracked();
+        verify(storage, never()).savePremiumCheck(anyString(), anyInt(), anyLong());
     }
 
     @Test
@@ -152,6 +213,7 @@ class JoinManagementTest {
 
         assertCracked();
         verify(resolver, never()).findProfile(anyString());
+        verify(storage, never()).loadPremiumCheck(anyString());
         verify(core, times(1)).hasFailedLogin(IP, NAME);
     }
 
@@ -180,7 +242,17 @@ class JoinManagementTest {
         assertEquals(Boolean.TRUE, join.premiumRequest, "premium login as registered player");
         assertFalse(join.cracked);
         verify(resolver, never()).findProfile(anyString());
+        verify(storage, never()).loadPremiumCheck(anyString());
         verify(core, never()).hasFailedLogin(anyString(), anyString());
+    }
+
+    private void assertSavedCheck(int failures, long before, long delay) throws SQLException {
+        ArgumentCaptor<Long> suspendedUntil = ArgumentCaptor.forClass(Long.class);
+        verify(storage).savePremiumCheck(eq(NAME), eq(failures), suspendedUntil.capture());
+
+        long after = System.currentTimeMillis();
+        assertTrue(suspendedUntil.getValue() >= before + delay && suspendedUntil.getValue() <= after + delay,
+                "suspended for the expected delay");
     }
 
     private void newPlayer() {
