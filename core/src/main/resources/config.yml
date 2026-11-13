@@ -165,6 +165,13 @@ nameChangeCheck: false
 # ChangeSkin, SkinRestorer, ...
 forwardSkin: true
 
+# Velocity only: name of a profile property added to every player whose premium login was verified by Mojang. Its
+# value is 'true' and it has no signature. Other properties (like the skin) are kept.
+#
+# The proxy forwards the profile properties to your servers (modern forwarding), so a plugin there can tell verified
+# players apart from cracked ones. Leave it empty to disable it.
+verifiedProfileProperty: ''
+
 # Displays a warning message that this message SHOULD only be invoked by
 # users who actually are the owner of this account (and not cracked players)
 #

@@ -119,6 +119,13 @@ public class ConnectListener {
     @Subscribe
     public void onGameProfileRequest(GameProfileRequestEvent event) {
         if (event.isOnlineMode()) {
+            // mark the profile as verified by Mojang, withId and removeSkin below keep this property
+            String verifiedProperty = plugin.getCore().getConfig().getString("verifiedProfileProperty", "");
+            if (!verifiedProperty.isEmpty()) {
+                Property property = new Property(verifiedProperty, "true", "");
+                event.setGameProfile(event.getGameProfile().addProperty(property));
+            }
+
             LoginSession session = plugin.getSession().get(event.getConnection().getRemoteAddress());
             if (session == null) {
                 plugin.getLog().error("No active login session found for onlinemode player {}", event.getUsername());
