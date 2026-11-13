@@ -82,7 +82,7 @@ public class AsyncPremiumCheck extends JoinManagement<Player, CommandSource, Vel
                                     String username, boolean registered) {
         source.enableOnlinemode();
         VelocityLoginSession session = new VelocityLoginSession(username, registered, profile);
-        plugin.getLog().error("Putting session: {}", source.getConnection());
+        plugin.getLog().debug("Putting session: {}", source.getConnection());
         plugin.getSession().put(source.getConnection().getRemoteAddress(), session);
 
         String ip = source.getAddress().getAddress().getHostAddress();

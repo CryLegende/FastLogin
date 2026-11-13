@@ -100,7 +100,10 @@ public class PluginMessageListener {
                 if (playerName.equals(sender.getUsername()) && premiumWarning
                     && !core.getPendingConfirms().contains(sender.getUniqueId())) {
                     String message = core.getMessage("premium-warning");
-                    sender.sendMessage(LegacyComponentSerializer.legacyAmpersand().deserialize(message));
+                    if (message != null) {
+                        sender.sendMessage(LegacyComponentSerializer.legacyAmpersand().deserialize(message));
+                    }
+
                     core.getPendingConfirms().add(sender.getUniqueId());
                     return;
                 }

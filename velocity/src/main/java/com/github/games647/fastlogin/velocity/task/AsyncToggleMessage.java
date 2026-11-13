@@ -33,6 +33,7 @@ import com.github.games647.fastlogin.velocity.event.VelocityFastLoginPremiumTogg
 import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.proxy.ConsoleCommandSource;
 import com.velocitypowered.api.proxy.Player;
+import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.TextComponent;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 
@@ -81,8 +82,10 @@ public class AsyncToggleMessage implements Runnable {
             new VelocityFastLoginPremiumToggleEvent(playerProfile, reason));
 
         if (isPlayerSender && core.getConfig().getBoolean("kick-toggle", true)) {
-            TextComponent msg = LegacyComponentSerializer.legacyAmpersand()
-                .deserialize(core.getMessage("remove-premium"));
+            // empty messages are not loaded
+            String message = core.getMessage("remove-premium");
+            TextComponent msg = message == null ? Component.empty()
+                : LegacyComponentSerializer.legacyAmpersand().deserialize(message);
             sender.disconnect(msg);
         } else {
             sendMessage("remove-premium");
@@ -107,6 +110,11 @@ public class AsyncToggleMessage implements Runnable {
 
     private void sendMessage(String localeId) {
         String message = core.getMessage(localeId);
+        if (message == null) {
+            // empty in messages.yml: nothing to send
+            return;
+        }
+
         if (isPlayerSender) {
             sender.sendMessage(LegacyComponentSerializer.legacyAmpersand().deserialize(message));
         } else {

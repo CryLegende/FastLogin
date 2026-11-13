@@ -52,6 +52,7 @@ import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.server.RegisteredServer;
 import com.velocitypowered.api.util.GameProfile;
 import com.velocitypowered.api.util.GameProfile.Property;
+import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.TextComponent;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.geysermc.floodgate.api.player.FloodgatePlayer;
@@ -104,7 +105,8 @@ public class ConnectListener {
                 return null;
             case Block:
                 String message = plugin.getCore().getMessage("kick-antibot");
-                TextComponent messageParsed = LegacyComponentSerializer.legacyAmpersand().deserialize(message);
+                TextComponent messageParsed = message == null ? Component.empty()
+                        : LegacyComponentSerializer.legacyAmpersand().deserialize(message);
 
                 PreLoginComponentResult reason = PreLoginComponentResult.denied(messageParsed);
                 preLoginEvent.setResult(reason);
