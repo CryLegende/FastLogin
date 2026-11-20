@@ -52,8 +52,9 @@ public class DelayedAuthHook implements Runnable {
 
     @Override
     public void run() {
-        boolean hookFound = isHookFound();
-        if (plugin.getBungeeManager().isEnabled()) {
+        boolean proxyMode = plugin.getBungeeManager().isEnabled();
+        boolean hookFound = isHookFound(!proxyMode);
+        if (proxyMode) {
             plugin.getLog().info("BungeeCord setting detected. No auth plugin is required");
         } else if (!hookFound) {
             plugin.getLog().warn("No auth plugin were found by this plugin "
@@ -67,15 +68,18 @@ public class DelayedAuthHook implements Runnable {
         }
     }
 
-    private boolean isHookFound() {
-        return plugin.getCore().getAuthPluginHook() != null || registerHooks();
+    private boolean isHookFound(boolean warnIfMissing) {
+        return plugin.getCore().getAuthPluginHook() != null || registerHooks(warnIfMissing);
     }
 
-    private boolean registerHooks() {
+    private boolean registerHooks(boolean warnIfMissing) {
         AuthPlugin<Player> authPluginHook = getAuthHook();
         if (authPluginHook == null) {
             //run this check for exceptions (errors) and not found plugins
-            plugin.getLog().warn("No support offline Auth plugin found. ");
+            // behind a proxy a backend without an auth plugin (lobby, game servers) is the normal case
+            if (warnIfMissing) {
+                plugin.getLog().warn("No support offline Auth plugin found. ");
+            }
             return false;
         }
 

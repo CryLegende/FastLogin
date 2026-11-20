@@ -116,7 +116,8 @@ public class ForceLoginTask
             type = Type.REGISTER;
         }
 
-        core.getPlugin().getLog().info("Sending force {} for {} towards server {}", type, player.getUsername(), server);
+        core.getPlugin().getLog().debug("Sending force {} for {} towards server {}",
+                type, player.getUsername(), server);
 
         UUID proxyId = core.getPlugin().getProxyId();
         ChannelMessage loginMessage = new LoginActionMessage(type, player.getUsername(), proxyId);

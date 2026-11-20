@@ -96,8 +96,8 @@ public class ConnectionListener implements Listener {
             }
 
             String sessionId = plugin.getSessionId(player.spigot().getRawAddress());
-            plugin.getLog().info("No on-going login session for player: {} with ID {}. ", player, sessionId);
-            plugin.getLog().info("Setups using Minecraft proxies will start delayed "
+            plugin.getLog().debug("No on-going login session for player: {} with ID {}. ", player, sessionId);
+            plugin.getLog().debug("Setups using Minecraft proxies will start delayed "
                 + "when the command from the proxy is received");
         } else {
             Runnable forceLoginTask = new ForceLoginTask(plugin.getCore(), player, session);

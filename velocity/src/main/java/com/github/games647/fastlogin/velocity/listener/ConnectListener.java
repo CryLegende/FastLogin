@@ -87,7 +87,7 @@ public class ConnectListener {
         InboundConnection connection = preLoginEvent.getConnection();
         String username = preLoginEvent.getUsername();
         InetSocketAddress address = connection.getRemoteAddress();
-        plugin.getLog().info("Incoming login request for {} from {}", username, address);
+        plugin.getLog().debug("Incoming login request for {} from {}", username, address);
 
         // FloodgateVelocity only sets the correct username in GetProfileRequestEvent, but we need it here too.
         if (plugin.getFloodgateService() != null) {
@@ -153,7 +153,7 @@ public class ConnectListener {
             if (!plugin.getCore().getConfig().get("premiumUuid", true)) {
                 UUID offlineUUID = UUIDAdapter.generateOfflineId(event.getUsername());
                 event.setGameProfile(event.getGameProfile().withId(offlineUUID));
-                plugin.getLog().info("Overridden UUID from {} to {} (based of {}) on {}",
+                plugin.getLog().debug("Overridden UUID from {} to {} (based of {}) on {}",
                         verifiedUUID, offlineUUID, verifiedUsername, event.getConnection());
             }
 
