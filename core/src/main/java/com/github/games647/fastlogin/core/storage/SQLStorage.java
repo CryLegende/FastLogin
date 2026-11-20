@@ -36,6 +36,7 @@ import java.sql.DatabaseMetaData;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.SQLIntegrityConstraintViolationException;
 import java.sql.Statement;
 import java.time.Instant;
 import java.util.Optional;
@@ -218,23 +219,22 @@ public abstract class SQLStorage implements AuthStorage {
 
             playerProfile.getSaveLock().lock();
             try {
-                if (playerProfile.isExistingPlayer()) {
-                    try (PreparedStatement saveStmt = con.prepareStatement(UPDATE_PROFILE)) {
-                        saveStmt.setString(1, uuid);
-                        saveStmt.setString(2, playerProfile.getName());
-                        saveStmt.setBoolean(3, playerProfile.isOnlinemodePreferred());
-                        saveStmt.setInt(4, playerProfile.getFloodgate().getValue());
-                        saveStmt.setString(5, playerProfile.getLastIp());
-
-                        saveStmt.setLong(6, playerProfile.getRowId());
-                        saveStmt.execute();
+                if (!playerProfile.isExistingPlayer()) {
+                    // another server (e.g. the backend's /premium command) may have created the row after this
+                    // profile was loaded: update that row instead of inserting a duplicate name
+                    long rowId = loadRowId(con, playerProfile.getName());
+                    if (rowId >= 0) {
+                        playerProfile.setRowId(rowId);
                     }
+                }
+
+                if (playerProfile.isExistingPlayer()) {
+                    updateProfile(con, playerProfile, uuid);
                 } else {
                     try (PreparedStatement saveStmt = con.prepareStatement(INSERT_PROFILE, RETURN_GENERATED_KEYS)) {
                         saveStmt.setString(1, uuid);
 
                         saveStmt.setString(2, playerProfile.getName());
-                        saveStmt.setBoolean(3, playerProfile.isOnlinemodePreferred());
                         saveStmt.setBoolean(3, playerProfile.isOnlinemodePreferred());
                         saveStmt.setInt(4, playerProfile.getFloodgate().getValue());
                         saveStmt.setString(5, playerProfile.getLastIp());
@@ -245,6 +245,15 @@ public abstract class SQLStorage implements AuthStorage {
                                 playerProfile.setRowId(generatedKeys.getInt(1));
                             }
                         }
+                    } catch (SQLIntegrityConstraintViolationException duplicate) {
+                        // same race, between the lookup above and the insert
+                        long rowId = loadRowId(con, playerProfile.getName());
+                        if (rowId < 0) {
+                            throw duplicate;
+                        }
+
+                        playerProfile.setRowId(rowId);
+                        updateProfile(con, playerProfile, uuid);
                     }
                 }
             } finally {
@@ -252,6 +261,28 @@ public abstract class SQLStorage implements AuthStorage {
             }
         } catch (SQLException ex) {
             log.error("Failed to save playerProfile {}", playerProfile, ex);
+        }
+    }
+
+    private void updateProfile(Connection con, StoredProfile playerProfile, String uuid) throws SQLException {
+        try (PreparedStatement saveStmt = con.prepareStatement(UPDATE_PROFILE)) {
+            saveStmt.setString(1, uuid);
+            saveStmt.setString(2, playerProfile.getName());
+            saveStmt.setBoolean(3, playerProfile.isOnlinemodePreferred());
+            saveStmt.setInt(4, playerProfile.getFloodgate().getValue());
+            saveStmt.setString(5, playerProfile.getLastIp());
+
+            saveStmt.setLong(6, playerProfile.getRowId());
+            saveStmt.execute();
+        }
+    }
+
+    private long loadRowId(Connection con, String name) throws SQLException {
+        try (PreparedStatement loadStmt = con.prepareStatement(LOAD_BY_NAME)) {
+            loadStmt.setString(1, name);
+            try (ResultSet resultSet = loadStmt.executeQuery()) {
+                return resultSet.next() ? resultSet.getLong("UserID") : -1;
+            }
         }
     }
 
